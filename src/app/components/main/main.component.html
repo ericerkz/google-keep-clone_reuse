@@ -10,8 +10,8 @@
       }
     }
     <div class="d-flex">
-        <div class="sidenav-sticky">
-            <app-sidenav></app-sidenav>
+        <div class="sidenav-sticky" [class.sidebar-collapsed]="sidebarCollapsed">
+            <app-sidenav (collapsedChange)="sidebarCollapsed = $event"></app-sidenav>
         </div>
         <div class="w-100 padding">
             <app-input class="desktop-placeholder-input"></app-input>

@@ -27,6 +27,14 @@
       width: 280px;
       z-index: 900;
     }
+    &.sidebar-collapsed {
+      flex-basis: 80px;
+      width: 80px;
+
+      app-sidenav {
+        width: 80px;
+      }
+    }
   }
 
 

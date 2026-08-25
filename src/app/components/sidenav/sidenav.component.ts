@@ -1,4 +1,4 @@
-import { AfterViewInit, Component, ElementRef, HostListener, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, EventEmitter, HostListener, OnDestroy, OnInit, Output, ViewChild } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { SharedService } from 'src/app/services/shared.service';
 import { LabelActionsT } from 'src/app/interfaces/labels';
@@ -22,6 +22,7 @@ export class NavComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild("binderInput") binderInput !: ElementRef<HTMLInputElement>
   @ViewChild("binderError") binderError !: ElementRef<HTMLInputElement>
   @ViewChild('labelsScroll') labelsScroll?: ElementRef<HTMLDivElement>
+  @Output() collapsedChange = new EventEmitter<boolean>();
 
   isMobileOpen = false;
   readonly nativePhoneDrawer = isNativePhonePlatform();
@@ -132,10 +133,10 @@ export class NavComponent implements OnInit, AfterViewInit, OnDestroy {
 
   collapseSideBar() {
     const sidebar = document.querySelector('[sideBar]');
-    if (sidebar) {
-      sidebar.classList.toggle('close');
-      this.isMobileOpen = !sidebar.classList.contains('close') && this.usesDrawerSidebar();
-    }
+    if (!sidebar) return;
+
+    sidebar.classList.toggle('close');
+    this.updateSidebarState(sidebar);
   }
 
   closeSideBarIfOpen() {
@@ -143,7 +144,7 @@ export class NavComponent implements OnInit, AfterViewInit, OnDestroy {
     const sidebar = document.querySelector('[sideBar]')
     if (sidebar && !sidebar.classList.contains('close')) {
       sidebar.classList.add('close')
-      this.isMobileOpen = false
+      this.updateSidebarState(sidebar)
     }
   }
 
@@ -152,8 +153,14 @@ export class NavComponent implements OnInit, AfterViewInit, OnDestroy {
     const sidebar = document.querySelector('[sideBar]')
     if (sidebar && !sidebar.classList.contains('close')) {
       sidebar.classList.add('close')
-      this.isMobileOpen = false;
+      this.updateSidebarState(sidebar)
     }
+  }
+
+  private updateSidebarState(sidebar: Element) {
+    const collapsed = sidebar.classList.contains('close');
+    this.collapsedChange.emit(collapsed);
+    this.isMobileOpen = !collapsed && this.usesDrawerSidebar();
   }
 
   toggleTheme() {
@@ -185,16 +192,15 @@ export class NavComponent implements OnInit, AfterViewInit, OnDestroy {
       this.Shared.closeSideBar.subscribe(x => { if (x) this.collapseSideBar() }),
       this.Shared.closeSideBarIfOpen.subscribe(x => { if (x) this.closeSideBarIfOpen() })
     );
-    if (this.usesDrawerSidebar()) {
-      const sidebar = document.querySelector('[sideBar]');
-      if (sidebar && !sidebar.classList.contains('close')) {
-        sidebar.classList.add('close');
-      }
-      this.isMobileOpen = false;
-    }
   }
 
   ngAfterViewInit() {
+    const sidebar = document.querySelector('[sideBar]');
+    if (sidebar) {
+      if (this.usesDrawerSidebar()) sidebar.classList.add('close');
+      queueMicrotask(() => this.updateSidebarState(sidebar));
+    }
+
     const el = this.labelsScroll?.nativeElement;
     if (!el) return;
     this.updateLabelsOverflowState();
