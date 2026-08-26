@@ -125,6 +125,7 @@
     @let filteredNotes = notes | notesTools:currentPageName:Shared.searchQuery:Shared.searchScope.value;
     @for (note of visibleNotes(filteredNotes); track note.id) {
       <div #noteEL class="note-container" [class.selected]="Shared.isNoteSelected(note.id)"
+        [class.drawing-card]="note.images?.[0]?.id === 'drawing'"
         [class.note-dragging]="draggedNoteId === note.id"
         [attr.data-note-id]="note.id"
         [draggable]="canReorderNote(note)"
@@ -296,7 +297,7 @@
               <button type="button" class="rp-clear" (click)="clearReminder(note, $event)">Remove reminder</button>
             </div>
           }
-          <div class="icons-container min">
+          <div class="icons-container min" (touchstart)="$event.stopPropagation()" (touchend)="$event.stopPropagation()">
             <div class="icons">
               <div class="alarm H pop" data-pop="Remind me"
                 [class.alarm-active]="!!getActiveReminderForNote(note.id!)"

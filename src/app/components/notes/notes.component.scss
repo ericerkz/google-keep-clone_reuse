@@ -876,6 +876,23 @@
   }
 }
 
+@media (max-width: 1024px), (pointer: coarse) {
+  .note-container.drawing-card {
+    .icons-container.min:not(.archive-actions):not(.trash-actions),
+    &:hover .icons-container.min:not(.archive-actions):not(.trash-actions) {
+      display: flex !important;
+      opacity: 1 !important;
+      pointer-events: auto;
+    }
+
+    .icons-container.min .icons > div {
+      height: 44px;
+      margin: 0;
+      width: 44px;
+    }
+  }
+}
+
 .icons-container.min.archive-actions {
   display: none !important;
   opacity: 0 !important;
