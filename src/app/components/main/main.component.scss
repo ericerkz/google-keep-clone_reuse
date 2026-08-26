@@ -39,6 +39,17 @@
   }
 }
 
+@media (min-width: 600px) {
+  .main-section.sidebar-collapsed .sidenav-sticky {
+    flex-basis: 80px;
+    width: 80px;
+
+    app-sidenav {
+      width: 80px;
+    }
+  }
+}
+
 .main-section.native-phone-layout .sidenav-sticky {
   flex: 0;
   position: static;

@@ -1,6 +1,7 @@
 <app-navbar></app-navbar>
 <app-update-banner></app-update-banner>
-<section class="main-section" [class.native-phone-layout]="nativePhoneLayout">
+<section class="main-section" [class.native-phone-layout]="nativePhoneLayout"
+    [class.sidebar-collapsed]="(Shared.sideBarCollapsed | async)">
     @if ((offlineSync.state$ | async); as syncState) {
       @if (syncState !== 'saved') {
         <div class="offline-sync-state" [class.is-error]="syncState === 'error'" role="status">

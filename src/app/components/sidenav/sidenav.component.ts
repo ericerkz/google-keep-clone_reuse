@@ -133,8 +133,9 @@ export class NavComponent implements OnInit, AfterViewInit, OnDestroy {
   collapseSideBar() {
     const sidebar = document.querySelector('[sideBar]');
     if (sidebar) {
-      sidebar.classList.toggle('close');
-      this.isMobileOpen = !sidebar.classList.contains('close') && this.usesDrawerSidebar();
+      const collapsed = sidebar.classList.toggle('close');
+      this.Shared.sideBarCollapsed.next(collapsed);
+      this.isMobileOpen = !collapsed && this.usesDrawerSidebar();
     }
   }
 
@@ -144,6 +145,7 @@ export class NavComponent implements OnInit, AfterViewInit, OnDestroy {
     if (sidebar && !sidebar.classList.contains('close')) {
       sidebar.classList.add('close')
       this.isMobileOpen = false
+      this.Shared.sideBarCollapsed.next(true)
     }
   }
 
@@ -153,6 +155,7 @@ export class NavComponent implements OnInit, AfterViewInit, OnDestroy {
     if (sidebar && !sidebar.classList.contains('close')) {
       sidebar.classList.add('close')
       this.isMobileOpen = false;
+      this.Shared.sideBarCollapsed.next(true)
     }
   }
 
@@ -185,13 +188,13 @@ export class NavComponent implements OnInit, AfterViewInit, OnDestroy {
       this.Shared.closeSideBar.subscribe(x => { if (x) this.collapseSideBar() }),
       this.Shared.closeSideBarIfOpen.subscribe(x => { if (x) this.closeSideBarIfOpen() })
     );
-    if (this.usesDrawerSidebar()) {
-      const sidebar = document.querySelector('[sideBar]');
-      if (sidebar && !sidebar.classList.contains('close')) {
-        sidebar.classList.add('close');
-      }
-      this.isMobileOpen = false;
+    const sidebar = document.querySelector('[sideBar]');
+    if (this.usesDrawerSidebar() && sidebar && !sidebar.classList.contains('close')) {
+      sidebar.classList.add('close');
     }
+    const collapsed = !!sidebar?.classList.contains('close');
+    this.Shared.sideBarCollapsed.next(collapsed);
+    this.isMobileOpen = !collapsed && this.usesDrawerSidebar();
   }
 
   ngAfterViewInit() {
