@@ -299,10 +299,10 @@
           }
           <div class="icons-container min" (touchstart)="$event.stopPropagation()" (touchend)="$event.stopPropagation()">
             <div class="icons">
-              <div class="alarm H pop" data-pop="Remind me"
+              <button type="button" class="alarm H pop" data-pop="Remind me" aria-label="Remind me"
                 [class.alarm-active]="!!getActiveReminderForNote(note.id!)"
                 (mousedown)="$event.stopPropagation()" (click)="toggleReminderPicker(note, $event)">
-              </div>
+              </button>
               @if (pendingNoteDateConfirm?.note?.id === note.id) {
                 <div class="date-confirm-pill date-confirm-pill--note"
                   (mousedown)="$event.stopPropagation()" (click)="$event.stopPropagation()"
@@ -322,13 +322,14 @@
                 (click)="openTooltip(colorMenuTtBtn,colorMenuTt,note)" class="color H pop">
               </div>
               <div class="image H pop" data-pop="Add image" (click)="openModalForImage(noteEL,note,$event)"></div>
-              <div [ngClass]="note.archived ? 'unarchive' : 'archive'" class="H pop"
+              <button type="button" [ngClass]="note.archived ? 'unarchive' : 'archive'" class="H pop"
                 (click)="toggleArchive(note.id!,note.archived)"
-              [attr.data-pop]="note.archived ? 'Unarchive' : 'Archive'"></div>
-              <div data-toolTipType="moreMenu" #moreMenuTtBtn
+                [attr.aria-label]="note.archived ? 'Unarchive note' : 'Archive note'"
+                [attr.data-pop]="note.archived ? 'Unarchive' : 'Archive'"></button>
+              <button type="button" data-toolTipType="moreMenu" #moreMenuTtBtn
                 (click)="openTooltip(moreMenuTtBtn,moreMenuTt,note)" class="more H pop"
-                data-pop="More">
-              </div>
+                data-pop="More" aria-label="More note actions">
+              </button>
             </div>
           </div>
           @if (note.archived) {

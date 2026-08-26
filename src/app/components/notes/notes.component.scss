@@ -844,7 +844,8 @@
         width: 100%;
         justify-content: space-around;
 
-        > div {
+        > div,
+        > button {
           height: 28px;
           width: 28px;
           margin: 0 2px;
@@ -885,10 +886,20 @@
       pointer-events: auto;
     }
 
-    .icons-container.min .icons > div {
-      height: 44px;
-      margin: 0;
-      width: 44px;
+    .icons-container.min .icons {
+      > div,
+      > button {
+        flex: 0 0 44px;
+        height: 44px;
+        margin: 0;
+        width: 44px;
+      }
+
+      > .colab,
+      > .color,
+      > .image {
+        display: none;
+      }
     }
   }
 }

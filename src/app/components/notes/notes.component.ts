@@ -1428,8 +1428,8 @@ export class NotesComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
   //? tooltip  -----------------------------------------------------------
 
-  Ttbutton?: HTMLDivElement // used in moreMenu.openLabelMenu
-  openTooltip(button: HTMLDivElement, tooltipEl: HTMLDivElement, note: NoteI) {
+  Ttbutton?: HTMLElement // used in moreMenu.openLabelMenu
+  openTooltip(button: HTMLElement, tooltipEl: HTMLDivElement, note: NoteI) {
     this.activeNote = note
     this.Shared.note.id = note.id!
     this.Ttbutton = button

@@ -734,7 +734,7 @@ app-navbar .user-pic-container:hover::after {
 }
 
 .icons-container .icons>div,
-.icons-container .icons>button.undo,
+.icons-container .icons>button,
 .pin-icon {
   appearance: none;
   border: 0;
@@ -747,7 +747,7 @@ app-navbar .user-pic-container:hover::after {
 }
 
 .icons-container .icons>div::after,
-.icons-container .icons>button.undo::after,
+.icons-container .icons>button::after,
 .pin-icon::after {
   background-color: #5f6368;
   content: "";
@@ -760,7 +760,7 @@ app-navbar .user-pic-container:hover::after {
 }
 
 .icons-container .icons>div:hover,
-.icons-container .icons>button.undo:hover,
+.icons-container .icons>button:hover,
 .pin-icon:hover {
   opacity: 0.87 !important;
 }
