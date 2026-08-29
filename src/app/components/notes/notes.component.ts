@@ -507,7 +507,6 @@ export class NotesComponent implements OnInit, OnDestroy, AfterViewChecked {
       const instance = Bricks({ container: node, packed: 'data-packed', sizes: sizes, position: false });
       instance.pack()
     }
-    window.onresize = () => { if (this.Shared.noteViewType.value === 'list') this.Shared.noteViewType.next('grid') }
     //? we align the titles to the masonry width
     this.title.forEach(el => {
       if (this.Shared.noteViewType.value === 'list') el.nativeElement.style.maxWidth = masonryWidth
