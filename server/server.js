@@ -1025,12 +1025,27 @@ function canonicalizeNoteImages(images) {
   });
 }
 
+function appliedNoteLabels(labels) {
+  const normalized = [];
+  const seen = new Set();
+  for (const label of Array.isArray(labels) ? labels : []) {
+    const name = String(label?.name || '').trim();
+    if (!name || label?.added !== true) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push({ id: label.id, name, added: true });
+  }
+  return normalized;
+}
+
 function canonicalizeNotePayload(payload) {
   const locked = !!payload.locked && !!payload.lockSalt && !!payload.lockHash;
   return {
     ...payload,
     noteBody: canonicalizeNoteHtmlImages(payload.noteBody || ''),
     images: canonicalizeNoteImages(payload.images || []),
+    labels: appliedNoteLabels(payload.labels || []),
     binder: String(payload.binder || '').trim().slice(0, 80),
     locked,
     lockSalt: locked ? String(payload.lockSalt || '').slice(0, 256) : '',
@@ -1075,7 +1090,7 @@ function dbNoteToApi(row) {
     checkBoxes: parseJson(row.checkBoxes, []),
     images: parseJson(row.images || '[]', []),
     isCbox: Boolean(row.isCbox),
-    labels: parseJson(row.labels, []),
+    labels: appliedNoteLabels(parseJson(row.labels, [])),
     binder: row.binder || '',
     locked: Boolean(row.locked),
     lockSalt: row.lockSalt || '',
@@ -1349,7 +1364,7 @@ function dbNoteToCard(row, options = {}) {
   const includeSearchText = !!options.includeSearchText;
   const locked = Boolean(row.locked);
   const pinned = row.userPinned !== undefined ? row.userPinned : row.pinned;
-  const labels = parseJson(row.labels || '[]', []);
+  const labels = appliedNoteLabels(parseJson(row.labels || '[]', []));
   const checkBoxes = parseJson(row.checkBoxes || '[]', []);
   const parsedImages = parseJson(row.images || '[]', []);
   const images = Array.isArray(parsedImages) ? parsedImages.filter(Boolean) : [];
@@ -1404,7 +1419,7 @@ function dbNoteToCard(row, options = {}) {
 function noteSummaryFromRow(row) {
   const locked = Boolean(row.locked);
   const checkBoxes = parseJson(row.checkBoxes || '[]', []);
-  const labels = parseJson(row.labels || '[]', []);
+  const labels = appliedNoteLabels(parseJson(row.labels || '[]', []));
   const collaboratorIds = row.collaboratorIds
     ? String(row.collaboratorIds).split(',').map(Number).filter(Boolean)
     : [];

@@ -179,7 +179,7 @@ export class SharedService {
 
     const derivedLabels = (this.note.all || [])
       .flatMap(note => note.labels || [])
-      .filter(label => label?.added !== false);
+      .filter(label => label?.added === true);
 
     for (const label of derivedLabels) {
       this.addLabelIfMissing(labels, seen, label);

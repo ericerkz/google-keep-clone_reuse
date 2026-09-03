@@ -592,8 +592,8 @@ export class InputComponent implements OnInit {
 
   private normalizeLabels(labels: any[] = []) {
     return labels
-      .filter(label => label.added !== false)
-      .map(label => ({ id: label.id, name: label.name, added: label.added !== false }))
+      .filter(label => label.added === true)
+      .map(label => ({ id: label.id, name: label.name, added: true }))
   }
 
   private async labelsForSave() {

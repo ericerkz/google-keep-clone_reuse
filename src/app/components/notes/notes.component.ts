@@ -1568,13 +1568,13 @@ export class NotesComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.scheduleBuildMasonry(true)
       },
       openLabelMenu: (tooltipEl: HTMLDivElement) => {
-        this.labels = JSON.parse(JSON.stringify(this.Shared.label.list))
+        this.labels = this.Shared.label.list.map(label => ({ ...label, added: false }))
         this.labelMenuError = ''
         this.Shared.createTooltip(this.Ttbutton!, tooltipEl)
         this.Shared.note.db.get().then(note => {
           note.labels.forEach(noteLabel => {
             let label = this.labels.find(x => x.name === noteLabel.name)
-            if (label) label.added = noteLabel.added
+            if (label) label.added = noteLabel.added === true
           })
         })
       },
@@ -1604,7 +1604,7 @@ export class NotesComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   labelMenu(label: LabelI) {
     label.added = !label.added
-    this.Shared.note.db.updateKey({ labels: this.labels })
+    this.Shared.note.db.updateKey({ labels: this.selectedLabelsForSave() })
   }
 
   async addLabelFromMenu(input: HTMLInputElement) {
@@ -1616,7 +1616,7 @@ export class NotesComponent implements OnInit, OnDestroy, AfterViewChecked {
       existing.added = true
       input.value = ''
       this.labelMenuError = ''
-      this.Shared.note.db.updateKey({ labels: this.labels })
+      this.Shared.note.db.updateKey({ labels: this.selectedLabelsForSave() })
       return
     }
 
@@ -1625,18 +1625,24 @@ export class NotesComponent implements OnInit, OnDestroy, AfterViewChecked {
       this.labels = [{ id, name, added: true }, ...this.labels]
       input.value = ''
       this.labelMenuError = ''
-      this.Shared.note.db.updateKey({ labels: this.labels })
+      this.Shared.note.db.updateKey({ labels: this.selectedLabelsForSave() })
     } catch (error: any) {
       const matchingLabel = this.Shared.label.list.find(label => label.name.toLowerCase() === name.toLowerCase())
       if (matchingLabel) {
         this.labels = [{ ...matchingLabel, added: true }, ...this.labels]
         input.value = ''
         this.labelMenuError = ''
-        this.Shared.note.db.updateKey({ labels: this.labels })
+        this.Shared.note.db.updateKey({ labels: this.selectedLabelsForSave() })
         return
       }
       this.labelMenuError = error?.status === 409 ? 'Label already exists' : 'Could not create label'
     }
+  }
+
+  private selectedLabelsForSave() {
+    return this.labels
+      .filter(label => label.added === true)
+      .map(label => ({ id: label.id, name: label.name, added: true }))
   }
 
   async addBinderFromMenu(input: HTMLInputElement) {
