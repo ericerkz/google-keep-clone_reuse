@@ -245,6 +245,8 @@ export class ShareIntentsService {
       const file = await this.fileFromReference(fileRef);
       await this.notes.uploadAttachment(noteId, file);
     }
+
+    await this.notes.load(undefined, { cacheBust: true });
   }
 
   private noteForIntent(intent: ShareIntent, body: string, images: NoteImageI[]): NoteI {

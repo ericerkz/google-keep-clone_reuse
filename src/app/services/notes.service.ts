@@ -617,17 +617,7 @@ export class NotesService {
       formData,
       { headers: this.auth.authHeaders() }
     ));
-    if (this.offlineSync.partition) {
-      await this.offlineStore.putAttachment(this.offlineSync.partition, attachment);
-      if (note?.syncId) {
-        const updatedNote = {
-          ...note,
-          attachments: [attachment, ...(note.attachments || []).filter(item => item.syncId !== attachment.syncId && item.id !== attachment.id)]
-        };
-        await this.offlineStore.putNote(this.offlineSync.partition, updatedNote);
-        this.mergeNoteIntoList(updatedNote);
-      }
-    }
+    if (this.offlineSync.partition) await this.offlineStore.putAttachment(this.offlineSync.partition, attachment);
     return attachment;
   }
 
