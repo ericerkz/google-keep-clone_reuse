@@ -4154,6 +4154,9 @@ async function applySyncNoteMutation(userId, mutation) {
   const note = await getAccessibleNote(existing.id, userId);
   if (!note) return { ok: false, status: 403, error: 'Note not accessible.', syncId };
   const isOwner = note.ownerUserId === userId;
+  const shouldPinForUser = Object.prototype.hasOwnProperty.call(payload, 'pinned')
+    ? !!payload.pinned
+    : !!note.userPinned;
   if (!Object.prototype.hasOwnProperty.call(payload, 'binder')) {
     noteData.binder = note.binder || '';
   }
@@ -4173,6 +4176,7 @@ async function applySyncNoteMutation(userId, mutation) {
     noteData.binder = note.binder || '';
     noteData.archived = Boolean(note.archived);
     noteData.trashed = Boolean(note.trashed);
+    // Preserve the owner/global note value; the requester's pin state lives in user_pins.
     noteData.pinned = Boolean(note.pinned);
     noteData.isCbox = Boolean(note.isCbox);
     noteData.locked = Boolean(note.locked);
@@ -4212,10 +4216,8 @@ async function applySyncNoteMutation(userId, mutation) {
       note.id
     ]
   );
-  if (isOwner) {
-    if (noteData.pinned) await run('INSERT OR IGNORE INTO user_pins (userId, noteId) VALUES (?, ?)', [userId, note.id]);
-    else await run('DELETE FROM user_pins WHERE userId = ? AND noteId = ?', [userId, note.id]);
-  }
+  if (shouldPinForUser) await run('INSERT OR IGNORE INTO user_pins (userId, noteId) VALUES (?, ?)', [userId, note.id]);
+  else await run('DELETE FROM user_pins WHERE userId = ? AND noteId = ?', [userId, note.id]);
   await syncNoteImagesForNote(note.id, note.ownerUserId, noteData);
   await cleanupUnusedLabels(userId);
   await broadcastNoteChange(note.id, 'updated', undefined, { preserveStamp: true });
@@ -5121,6 +5123,9 @@ app.put('/api/notes/:id', requireAuth, asyncRoute(async (req, res) => {
   if (!note) return res.status(404).json({ error: 'Note not found.' });
   const isOwner = note.ownerUserId === req.user.id;
   const next = canonicalizeNotePayload({ ...dbNoteToApi(note), ...req.body });
+  const shouldPinForUser = Object.prototype.hasOwnProperty.call(req.body || {}, 'pinned')
+    ? !!req.body.pinned
+    : !!note.userPinned;
   if (!isOwner) {
     next.bgColor = note.bgColor || '';
     next.bgImage = note.bgImage || '';
@@ -5128,6 +5133,7 @@ app.put('/api/notes/:id', requireAuth, asyncRoute(async (req, res) => {
     next.binder = note.binder || '';
     next.archived = Boolean(note.archived);
     next.trashed = Boolean(note.trashed);
+    // Preserve the owner/global note value; the requester's pin state lives in user_pins.
     next.pinned = Boolean(note.pinned);
     next.isCbox = Boolean(note.isCbox);
     next.locked = Boolean(note.locked);
@@ -5162,8 +5168,7 @@ app.put('/api/notes/:id', requireAuth, asyncRoute(async (req, res) => {
       Number(req.params.id)
     ]
   );
-  const shouldPin = isOwner ? !!next.pinned : !!note.pinned;
-  if (shouldPin) {
+  if (shouldPinForUser) {
     await run('INSERT OR IGNORE INTO user_pins (userId, noteId) VALUES (?, ?)', [req.user.id, Number(req.params.id)]);
   } else {
     await run('DELETE FROM user_pins WHERE userId = ? AND noteId = ?', [req.user.id, Number(req.params.id)]);
@@ -5197,6 +5202,9 @@ app.patch('/api/notes/:id', requireAuth, asyncRoute(async (req, res) => {
 
   const isOwner = existing.ownerUserId === req.user.id;
   const next = canonicalizeNotePayload({ ...dbNoteToApi(existing), ...req.body });
+  const shouldPinForUser = Object.prototype.hasOwnProperty.call(req.body || {}, 'pinned')
+    ? !!req.body.pinned
+    : !!existing.userPinned;
   if (!isOwner) {
     next.bgColor = existing.bgColor || '';
     next.bgImage = existing.bgImage || '';
@@ -5204,6 +5212,7 @@ app.patch('/api/notes/:id', requireAuth, asyncRoute(async (req, res) => {
     next.binder = existing.binder || '';
     next.archived = Boolean(existing.archived);
     next.trashed = Boolean(existing.trashed);
+    // Preserve the owner/global note value; the requester's pin state lives in user_pins.
     next.pinned = Boolean(existing.pinned);
     next.isCbox = Boolean(existing.isCbox);
     next.locked = Boolean(existing.locked);
@@ -5238,8 +5247,7 @@ app.patch('/api/notes/:id', requireAuth, asyncRoute(async (req, res) => {
       Number(req.params.id)
     ]
   );
-  const shouldPin = isOwner ? !!next.pinned : !!existing.pinned;
-  if (shouldPin) {
+  if (shouldPinForUser) {
     await run('INSERT OR IGNORE INTO user_pins (userId, noteId) VALUES (?, ?)', [req.user.id, Number(req.params.id)]);
   } else {
     await run('DELETE FROM user_pins WHERE userId = ? AND noteId = ?', [req.user.id, Number(req.params.id)]);

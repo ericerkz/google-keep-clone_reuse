@@ -63,6 +63,17 @@ async function main() {
     });
     const token = login.token;
     const headers = authHeaders(token);
+    await request('/users', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ username: 'sync-collab', displayName: 'Sync Collaborator', password: 'test-password-456' })
+    });
+    const collabLogin = await request('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username: 'sync-collab', password: 'test-password-456' })
+    });
+    const collabToken = collabLogin.token;
+    const collabHeaders = authHeaders(collabToken);
     const now = Date.now();
 
     const noteAndReminder = await request('/sync/mutations', {
@@ -227,6 +238,77 @@ async function main() {
     });
     assert.strictEqual(olderResult.results[0].skipped, true, 'older LWW write should be skipped');
     assert.strictEqual(olderResult.snapshot.notes.find(item => item.syncId === 'lww-note').noteTitle, 'newer');
+
+    const sharedNote = await request('/notes', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        syncId: 'shared-pin-note',
+        noteTitle: 'Shared pin note',
+        noteBody: '',
+        pinned: true,
+        bgColor: '',
+        bgImage: '',
+        checkBoxes: [],
+        images: [],
+        isCbox: false,
+        labels: [],
+        archived: false,
+        trashed: false
+      })
+    });
+    await request(`/notes/${sharedNote.id}/collaborators`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ userIds: [collabLogin.user.id] })
+    });
+    await request(`/notes/${sharedNote.id}`, {
+      method: 'PATCH',
+      headers: collabHeaders,
+      body: JSON.stringify({ pinned: true })
+    });
+    await request(`/notes/${sharedNote.id}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ pinned: false })
+    });
+    const collaboratorView = await request(`/notes/${sharedNote.id}`, { headers: collabHeaders });
+    const ownerView = await request(`/notes/${sharedNote.id}`, { headers });
+    assert.strictEqual(ownerView.pinned, false, 'owner unpin should update only the owner pin state');
+    assert.strictEqual(collaboratorView.pinned, true, 'collaborator pin should survive owner unpin');
+
+    const ownerUnpinnedSharedNote = await request('/notes', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        syncId: 'shared-pin-note-owner-unpinned',
+        noteTitle: 'Owner unpinned shared pin note',
+        noteBody: '',
+        pinned: false,
+        bgColor: '',
+        bgImage: '',
+        checkBoxes: [],
+        images: [],
+        isCbox: false,
+        labels: [],
+        archived: false,
+        trashed: false
+      })
+    });
+    await request(`/notes/${ownerUnpinnedSharedNote.id}/collaborators`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ userIds: [collabLogin.user.id] })
+    });
+    await request(`/notes/${ownerUnpinnedSharedNote.id}`, {
+      method: 'PATCH',
+      headers: collabHeaders,
+      body: JSON.stringify({ pinned: true })
+    });
+    const collaboratorPinnedView = await request(`/notes/${ownerUnpinnedSharedNote.id}`, { headers: collabHeaders });
+    const ownerUnpinnedView = await request(`/notes/${ownerUnpinnedSharedNote.id}`, { headers });
+    assert.strictEqual(ownerUnpinnedView.pinned, false, 'collaborator pin should not pin the note for the owner');
+    assert.strictEqual(collaboratorPinnedView.pinned, true, 'collaborator should be able to pin an owner-unpinned shared note');
 
     const deleted = await request('/sync/mutations', {
       method: 'POST',

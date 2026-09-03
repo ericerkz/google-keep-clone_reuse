@@ -41,7 +41,7 @@ I wanted something that felt like Google Keep: fast, colorful, easy to glance at
 
 - Text notes, checklists, image notes, drawings, links, and file attachments.
 - Drag-and-drop note ordering and checklist item ordering.
-- Labels, colors, background images, pinned notes, archive, and trash.
+- Labels, binders, colors, background images, pinned notes, archive, and trash.
 - Search and filters, including note type, labels, and date-style queries.
 - Link previews and inline images.
 - Time reminders with browser push notifications.
