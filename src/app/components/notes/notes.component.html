@@ -178,21 +178,22 @@
                   <div class="link-overflow-chip">+{{extraLinks}} link{{extraLinks === 1 ? '' : 's'}}</div>
                 }
             } @else {
+            <div class="title">
+              <span [innerHTML]="note.noteTitle"></span>
+            </div>
             <div class="note-images">
                 @for (image of note.images || []; track image.id) {
                   @if (image.placement === 'top') {
-                    <img [src]="imageSrc(image.dataUrl)" [alt]="image.name" decoding="async">
+                    <img [src]="imageSrc(image.dataUrl)" [alt]="image.name" decoding="async"
+                      (contextmenu)="downloadImage(image.dataUrl, image.name, $event)">
                   }
                 }
-            </div>
-            <div class="title">
-              <span [innerHTML]="note.noteTitle"></span>
             </div>
             @if (!note.isCbox || isHybridCard(note)) {
               <section class="body-segments" [class.min]="note.noteBody!.length > 68">
                 @for (segment of noteBodySegments(note); track trackBodySegment($index, segment)) {
                   @if (segment.type === 'html') {
-                    <div class="body" [innerHTML]="segment.value"></div>
+                    <div class="body" [innerHTML]="segment.value" (contextmenu)="downloadInlineImage($event)"></div>
                   } @else {
                     <div class="link-previews">
                       <app-link-preview [url]="segment.value"></app-link-preview>
@@ -242,7 +243,8 @@
             <div class="note-images">
               @for (image of note.images || []; track image.id) {
                 @if (image.placement === 'bottom') {
-                  <img [src]="imageSrc(image.dataUrl)" [alt]="image.name" decoding="async">
+                  <img [src]="imageSrc(image.dataUrl)" [alt]="image.name" decoding="async"
+                    (contextmenu)="downloadImage(image.dataUrl, image.name, $event)">
                 }
               }
             </div>

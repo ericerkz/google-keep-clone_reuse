@@ -31,6 +31,7 @@ export interface NoteI {
     locked?: boolean
     lockSalt?: string
     lockHash?: string
+    completedChecklistCollapsed?: boolean
     archived: boolean
     trashed: boolean
     trashedAt?: string

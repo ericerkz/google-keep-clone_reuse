@@ -1,8 +1,9 @@
 import { CheckboxI, NoteAttachmentI, NoteI, NoteImageI } from './../../interfaces/notes';
 import { AfterViewChecked, ChangeDetectorRef, Component, HostListener, NgZone, OnDestroy, OnInit, ViewChild, ElementRef, ViewChildren, QueryList } from '@angular/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 // @ts-ignore
 import Bricks from 'bricks.js'
-import { Subscription } from 'rxjs';
+import { firstValueFrom, Subscription, filter } from 'rxjs';
 import { SharedService } from 'src/app/services/shared.service';
 import { bgColors, bgImages } from 'src/app/interfaces/tooltip';
 import { LabelI } from 'src/app/interfaces/labels';
@@ -20,9 +21,23 @@ import { UserPreferencesService } from 'src/app/services/user-preferences.servic
 import { ensureTimepickerWheelPlugin } from 'src/app/utils/timepicker-wheel';
 
 declare var Snackbar: any;
+type PluginListenerHandle = { remove: () => Promise<void> | void };
+type CapacitorAppPlugin = {
+  addListener: (
+    eventName: 'appUrlOpen' | 'appStateChange' | 'resume',
+    listenerFunc: (event?: { url?: string; isActive?: boolean }) => void
+  ) => Promise<PluginListenerHandle>;
+};
+type KeptWidgetIntentsPlugin = {
+  getPendingOpenNoteId: () => Promise<{ noteId: number | null }>;
+  acknowledgeOpenNoteId: () => Promise<void>;
+};
 type NoteBodySegment = { type: 'html'; value: string } | { type: 'url'; value: string }
 type NoteBodyPreview = { segments: NoteBodySegment[]; urls: string[] }
 type NoteMeta = { rawBody: string; title: string; bgKey: string; urls: string[]; linkOnly: boolean; textColor: string; displayBody: string; bodySegments: NoteBodySegment[]; hiddenLinkCount: number; visibleUrls: string[] }
+
+const CapacitorApp = registerPlugin<CapacitorAppPlugin>('App');
+const KeptWidgetIntents = registerPlugin<KeptWidgetIntentsPlugin>('KeptWidgetIntents');
 @Component({
     selector: 'app-notes',
     templateUrl: './notes.component.html',
@@ -157,6 +172,11 @@ export class NotesComponent implements OnInit, OnDestroy, AfterViewChecked {
   private keptAppReadySent = false
   private keptAppReadyRetry?: ReturnType<typeof setTimeout>
   private viewportMasonryTimers: ReturnType<typeof setTimeout>[] = []
+  private widgetAppUrlOpenHandle?: PluginListenerHandle
+  private widgetAppStateHandle?: PluginListenerHandle
+  private widgetAppResumeHandle?: PluginListenerHandle
+  private pendingWidgetOpenTimer?: ReturnType<typeof setTimeout>
+  private pendingWidgetOpenInFlight = false
   //? -----------------------------------------------------
   trackBy(_index: number, item: any) { return item.id }
 
@@ -712,12 +732,12 @@ export class NotesComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   //? modal  -----------------------------------------------------------
 
-  async openModal(clickedNote: HTMLDivElement, noteData: NoteI, openImagePicker = false) {
+  async openModal(clickedNote: HTMLDivElement | null, noteData: NoteI, openImagePicker = false) {
     if (this.suppressNextOpen) {
       this.suppressNextOpen = false
       return
     }
-    if (this.Shared.selectedNoteIds.value.length) {
+    if (clickedNote && this.Shared.selectedNoteIds.value.length) {
       this.Shared.toggleNoteSelection(noteData.id!)
       return
     }
@@ -725,8 +745,8 @@ export class NotesComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (!canOpen) return
     this.openImagePickerOnModal = openImagePicker
     this.Shared.note.id = noteData.id!
-    this.clickedNoteEl = clickedNote
-    const source = clickedNote.getBoundingClientRect()
+    this.clickedNoteEl = clickedNote || undefined
+    const source = clickedNote?.getBoundingClientRect()
     this.suppressScrollPagination()
     this.captureModalScrollPosition()
     this.clickedNoteData = noteData.isCardPreview ? await this.notesService.get(noteData.id!, { merge: false }).catch(() => noteData) : noteData
@@ -734,7 +754,7 @@ export class NotesComponent implements OnInit, OnDestroy, AfterViewChecked {
     modalContainer.style.display = 'block';
     this.cd.detectChanges()
     this.prepareModalOpenAnimation(source)
-    clickedNote.classList.add('hide')
+    clickedNote?.classList.add('hide')
     document.addEventListener('mousedown', this.mouseDownEvent)
   }
 
@@ -759,7 +779,7 @@ export class NotesComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.Shared.saveNote.next(true)
   }
 
-  clickedNoteEl!: HTMLDivElement // needed in setModalStyling()
+  clickedNoteEl?: HTMLDivElement // needed in setModalStyling()
 
   @HostListener('document:keydown.escape')
   onEscapeKey() {
@@ -779,9 +799,11 @@ export class NotesComponent implements OnInit, OnDestroy, AfterViewChecked {
     let modalContainer = this.modalContainer.nativeElement
     const isMobileModal = shouldUseFullscreenNoteEditor()
     this.prepareModalCloseAnimation()
-    setTimeout(() => {
-      this.clickedNoteEl.classList.remove('hide')
-    }, isMobileModal ? 90 : 200)
+    if (this.clickedNoteEl) {
+      setTimeout(() => {
+        this.clickedNoteEl?.classList.remove('hide')
+      }, isMobileModal ? 90 : 200)
+    }
     setTimeout(() => {
       modalContainer.style.display = 'none'
       this.openImagePickerOnModal = false
@@ -843,9 +865,17 @@ export class NotesComponent implements OnInit, OnDestroy, AfterViewChecked {
     }, 1300)
   }
 
-  private prepareModalOpenAnimation(source: DOMRect) {
+  private prepareModalOpenAnimation(source?: DOMRect) {
     const modal = this.modal.nativeElement
     this.positionModalAtRest()
+    if (!source) {
+      modal.style.transition = 'opacity 0.16s ease'
+      modal.style.opacity = '0'
+      requestAnimationFrame(() => {
+        modal.style.opacity = '1'
+      })
+      return
+    }
     const target = modal.getBoundingClientRect()
     this.setModalTransformFromRect(source, target, false)
     requestAnimationFrame(() => {
@@ -856,8 +886,13 @@ export class NotesComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   private prepareModalCloseAnimation() {
-    const source = this.clickedNoteEl.getBoundingClientRect()
     const modal = this.modal.nativeElement
+    if (!this.clickedNoteEl) {
+      modal.style.transition = 'opacity 0.12s ease'
+      modal.style.opacity = '0'
+      return
+    }
+    const source = this.clickedNoteEl.getBoundingClientRect()
     const target = modal.getBoundingClientRect()
     this.setModalTransformFromRect(source, target, true)
   }
@@ -2366,6 +2401,7 @@ export class NotesComponent implements OnInit, OnDestroy, AfterViewChecked {
   ngOnInit(): void {
     this.syncCurrentPage(this.router.url)
     window.addEventListener('kept-smart-capture-notes-added', this.smartCaptureNotesAddedHandler)
+    this.registerWidgetOpenHandlers()
     this.subscriptions.push(
       this.Shared.closeSideBar.subscribe(() => { setTimeout(() => { this.scheduleBuildMasonry(true) }, 200) }),
       this.Shared.closeModal.subscribe(x => { if (x) this.closeModal() }),
@@ -2416,10 +2452,88 @@ export class NotesComponent implements OnInit, OnDestroy, AfterViewChecked {
     })
   }
 
+  private async registerWidgetOpenHandlers() {
+    if (Capacitor.getPlatform() !== 'android') return
+    try {
+      this.widgetAppUrlOpenHandle = await CapacitorApp.addListener('appUrlOpen', event => {
+        const noteId = this.noteIdFromWidgetUrl(event?.url || '')
+        if (noteId) this.zone.run(() => this.openWidgetNote(noteId, true).catch(console.error))
+      })
+      this.widgetAppStateHandle = await CapacitorApp.addListener('appStateChange', event => {
+        if (event?.isActive) this.zone.run(() => this.schedulePendingWidgetNoteCheck())
+      })
+      this.widgetAppResumeHandle = await CapacitorApp.addListener('resume', () => {
+        this.zone.run(() => this.schedulePendingWidgetNoteCheck())
+      })
+      this.schedulePendingWidgetNoteCheck()
+    } catch (error) {
+      console.warn('Kept widget note-open listener unavailable', error)
+    }
+  }
+
+  private schedulePendingWidgetNoteCheck(delay = 150) {
+    if (this.pendingWidgetOpenTimer) clearTimeout(this.pendingWidgetOpenTimer)
+    this.pendingWidgetOpenTimer = setTimeout(() => {
+      this.pendingWidgetOpenTimer = undefined
+      this.openPendingWidgetNote().catch(console.error)
+    }, delay)
+  }
+
+  private async openPendingWidgetNote() {
+    if (this.pendingWidgetOpenInFlight) return
+    this.pendingWidgetOpenInFlight = true
+    try {
+      await this.waitForAuth()
+      const result = await KeptWidgetIntents.getPendingOpenNoteId()
+      const noteId = Number(result?.noteId || 0)
+      if (!Number.isFinite(noteId) || noteId <= 0) return
+      await this.openWidgetNote(noteId, true)
+    } catch (error) {
+      console.warn('Could not open pending Kept widget note', error)
+    } finally {
+      this.pendingWidgetOpenInFlight = false
+    }
+  }
+
+  private async openWidgetNote(noteId: number, acknowledge: boolean) {
+    if (!Number.isFinite(noteId) || noteId <= 0) return
+    await this.waitForAuth()
+    if (this.modalContainer?.nativeElement?.style.display === 'block') {
+      this.Shared.saveNote.next(true)
+      setTimeout(() => this.openWidgetNote(noteId, acknowledge).catch(console.error), shouldUseFullscreenNoteEditor() ? 220 : 460)
+      return
+    }
+    this.Shared.clearNoteSelection()
+    const note = await this.notesService.get(noteId, { merge: false })
+    await this.openModal(null, note)
+    if (acknowledge) {
+      try {
+        await KeptWidgetIntents.acknowledgeOpenNoteId()
+      } catch (error) {
+        console.warn('Could not acknowledge Kept widget note open', error)
+      }
+    }
+  }
+
+  private waitForAuth() {
+    if (this.auth.currentUser?.token) return Promise.resolve()
+    return firstValueFrom(this.auth.currentUser$.pipe(filter(user => !!user?.token)))
+  }
+
+  private noteIdFromWidgetUrl(url: string) {
+    const match = String(url || '').match(/^kept:\/\/note\/(\d+)(?:[/?#]|$)/i)
+    const noteId = Number(match?.[1] || 0)
+    return Number.isFinite(noteId) && noteId > 0 ? noteId : null
+  }
+
   ngOnDestroy(): void {
     window.removeEventListener('kept-smart-capture-notes-added', this.smartCaptureNotesAddedHandler)
+    this.widgetAppUrlOpenHandle?.remove()
+    this.widgetAppStateHandle?.remove()
+    this.widgetAppResumeHandle?.remove()
     this.loadMoreObserver?.disconnect()
     if (this.keptAppReadyRetry) clearTimeout(this.keptAppReadyRetry)
+    if (this.pendingWidgetOpenTimer) clearTimeout(this.pendingWidgetOpenTimer)
     this.viewportMasonryTimers.forEach(timer => clearTimeout(timer))
     this.viewportMasonryTimers = []
     this.clearModalScrollRestoreTimers()
@@ -2434,12 +2548,30 @@ export class NotesComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   async downloadAttachment(attachment: NoteAttachmentI, event: Event) {
+    event.preventDefault()
     event.stopPropagation()
     try {
       await this.notesService.downloadAttachment(attachment)
     } catch (error: any) {
       this.showMessage(error?.error?.error || 'Could not download attachment.')
     }
+  }
+
+  async downloadImage(src: string, filename: string | undefined, event: Event) {
+    if (!this.notesService.canUseNativeDownloads()) return
+    event.preventDefault()
+    event.stopPropagation()
+    try {
+      await this.notesService.downloadImage(src, filename)
+    } catch (error: any) {
+      this.showMessage(error?.error?.error || 'Could not download image.')
+    }
+  }
+
+  async downloadInlineImage(event: Event) {
+    const target = event.target
+    if (!(target instanceof HTMLImageElement) || !this.notesService.canUseNativeDownloads()) return
+    await this.downloadImage(target.getAttribute('src') || target.src, target.getAttribute('alt') || 'kept-image', event)
   }
 
   attachmentIcon(attachment: NoteAttachmentI) {

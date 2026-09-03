@@ -358,7 +358,7 @@ export class AuthService {
 
 
   getBackupDownloadUrl(filename: string) {
-    return `${this.apiUrl}/admin/backup/download/${filename}?token=${this.token}`;
+    return `${this.apiUrl}/admin/backup/download/${encodeURIComponent(filename)}?token=${encodeURIComponent(this.token)}`;
   }
 
 

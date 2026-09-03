@@ -556,6 +556,17 @@ async function init() {
     )
   `);
   await run(`
+    CREATE TABLE IF NOT EXISTS user_note_view_states (
+      userId INTEGER NOT NULL,
+      noteId INTEGER NOT NULL,
+      completedChecklistCollapsed INTEGER NOT NULL DEFAULT 0,
+      updatedAt TEXT NOT NULL,
+      PRIMARY KEY(userId, noteId),
+      FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY(noteId) REFERENCES notes(id) ON DELETE CASCADE
+    )
+  `);
+  await run(`
     CREATE TABLE IF NOT EXISTS reminders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       noteId INTEGER UNIQUE REFERENCES notes(id) ON DELETE CASCADE,
@@ -1069,6 +1080,7 @@ function dbNoteToApi(row) {
     locked: Boolean(row.locked),
     lockSalt: row.lockSalt || '',
     lockHash: row.lockHash || '',
+    completedChecklistCollapsed: Boolean(row.completedChecklistCollapsed),
     archived: Boolean(row.archived),
     trashed: Boolean(row.trashed),
     trashedAt: row.trashedAt || '',
@@ -1363,6 +1375,7 @@ function dbNoteToCard(row, options = {}) {
     locked,
     lockSalt: row.lockSalt || '',
     lockHash: row.lockHash || '',
+    completedChecklistCollapsed: Boolean(row.completedChecklistCollapsed),
     archived: Boolean(row.archived),
     trashed: Boolean(row.trashed),
     trashedAt: row.trashedAt || '',
@@ -2451,13 +2464,15 @@ async function getAccessibleNote(noteId, userId) {
     `SELECT notes.*,
      COALESCE(pos.sortOrder, notes.sortOrder, notes.id) AS effectiveSortOrder,
      CASE WHEN user_pins.noteId IS NOT NULL THEN 1 ELSE 0 END AS userPinned,
+     COALESCE(view_state.completedChecklistCollapsed, 0) AS completedChecklistCollapsed,
      lastEditor.displayName AS lastEditorDisplayName FROM notes
      LEFT JOIN note_collaborators ON note_collaborators.noteId = notes.id AND note_collaborators.userId = ?
      LEFT JOIN user_pins ON user_pins.noteId = notes.id AND user_pins.userId = ?
      LEFT JOIN user_note_positions pos ON pos.noteId = notes.id AND pos.userId = ?
+     LEFT JOIN user_note_view_states view_state ON view_state.noteId = notes.id AND view_state.userId = ?
      LEFT JOIN users lastEditor ON lastEditor.id = notes.lastEditorUserId
      WHERE notes.id = ? AND (notes.ownerUserId = ? OR note_collaborators.userId IS NOT NULL)`,
-    [userId, userId, userId, noteId, userId]
+    [userId, userId, userId, userId, noteId, userId]
   );
 }
 
@@ -3650,7 +3665,7 @@ function resolveBackupFilePath(filename) {
   return resolved;
 }
 
-app.get('/api/admin/backup/download/:filename', requireAuth, requireAdmin, (req, res) => {
+app.get('/api/admin/backup/download/:filename', requireAuthOrQueryToken, requireAdmin, (req, res) => {
   const filePath = resolveBackupFilePath(req.params.filename);
   if (!filePath) return res.status(400).end();
   if (!fs.existsSync(filePath)) return res.status(404).end();
@@ -3739,7 +3754,7 @@ app.get('/api/users/search', requireAuth, asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/labels', requireAuth, asyncRoute(async (req, res) => {
-  res.json(await all('SELECT id, name FROM labels WHERE userId = ? ORDER BY id', [req.user.id]));
+  res.json(await all('SELECT id, name FROM labels WHERE userId = ? ORDER BY name COLLATE NOCASE, id', [req.user.id]));
 }));
 
 app.post('/api/labels/find-or-create', requireAuth, asyncRoute(async (req, res) => {
@@ -3940,16 +3955,18 @@ async function syncSnapshotForUser(userId) {
     `SELECT notes.*,
             COALESCE(pos.sortOrder, notes.sortOrder) AS effectiveSortOrder,
             CASE WHEN user_pins.noteId IS NOT NULL THEN 1 ELSE 0 END AS userPinned,
+            COALESCE(view_state.completedChecklistCollapsed, 0) AS completedChecklistCollapsed,
             lastEditor.displayName AS lastEditorDisplayName,
             (SELECT GROUP_CONCAT(nc.userId) FROM note_collaborators nc WHERE nc.noteId = notes.id) AS collaboratorIds
      FROM notes
      LEFT JOIN users lastEditor ON lastEditor.id = notes.lastEditorUserId
      LEFT JOIN user_pins ON user_pins.noteId = notes.id AND user_pins.userId = ?
      LEFT JOIN user_note_positions pos ON pos.noteId = notes.id AND pos.userId = ?
+     LEFT JOIN user_note_view_states view_state ON view_state.noteId = notes.id AND view_state.userId = ?
      LEFT JOIN note_collaborators access ON access.noteId = notes.id AND access.userId = ?
      WHERE notes.ownerUserId = ? OR access.userId IS NOT NULL
      ORDER BY userPinned DESC, effectiveSortOrder DESC, notes.id DESC`,
-    [userId, userId, userId, userId]
+    [userId, userId, userId, userId, userId]
   );
   await hydrateNoteUserFields(notes, userId);
   const noteIds = notes.map(note => note.id);
@@ -4465,6 +4482,7 @@ app.get('/api/notes', requireAuth, asyncRoute(async (req, res) => {
         `SELECT notes.*,
                 COALESCE(pos.sortOrder, notes.sortOrder, notes.id) AS effectiveSortOrder,
                 CASE WHEN user_pins.noteId IS NOT NULL THEN 1 ELSE 0 END AS userPinned,
+                COALESCE(view_state.completedChecklistCollapsed, 0) AS completedChecklistCollapsed,
                 owner.displayName AS ownerDisplayName,
                 owner.username AS ownerUsername,
                 owner.avatarPreset AS ownerAvatarPreset,
@@ -4477,8 +4495,9 @@ app.get('/api/notes', requireAuth, asyncRoute(async (req, res) => {
          LEFT JOIN users lastEditor ON lastEditor.id = notes.lastEditorUserId
          LEFT JOIN user_pins ON user_pins.noteId = notes.id AND user_pins.userId = ?
          LEFT JOIN user_note_positions pos ON pos.noteId = notes.id AND pos.userId = ?
+         LEFT JOIN user_note_view_states view_state ON view_state.noteId = notes.id AND view_state.userId = ?
          WHERE notes.id IN (${idPlaceholders})`,
-        [req.user.id, req.user.id, ...pageIds]
+        [req.user.id, req.user.id, req.user.id, ...pageIds]
       );
       trace.mark('detail-query', { rows: rows.length });
       const order = new Map(pageKeys.map((row, index) => [row.id, index]));
@@ -4494,6 +4513,7 @@ app.get('/api/notes', requireAuth, asyncRoute(async (req, res) => {
                    notes.id
                  ) AS effectiveSortOrder,
                  CASE WHEN user_pins.noteId IS NOT NULL THEN 1 ELSE 0 END AS userPinned,
+                 COALESCE(view_state.completedChecklistCollapsed, 0) AS completedChecklistCollapsed,
                  owner.displayName AS ownerDisplayName,
                  owner.username AS ownerUsername,
                  owner.avatarPreset AS ownerAvatarPreset,
@@ -4506,6 +4526,7 @@ app.get('/api/notes', requireAuth, asyncRoute(async (req, res) => {
           LEFT JOIN users lastEditor ON lastEditor.id = notes.lastEditorUserId
           LEFT JOIN user_pins ON user_pins.noteId = notes.id AND user_pins.userId = ?
           LEFT JOIN user_note_positions pos ON pos.noteId = notes.id AND pos.userId = ?
+          LEFT JOIN user_note_view_states view_state ON view_state.noteId = notes.id AND view_state.userId = ?
           LEFT JOIN note_collaborators access ON access.noteId = notes.id AND access.userId = ?
           WHERE notes.ownerUserId = ? OR access.userId IS NOT NULL
         )
@@ -4513,7 +4534,7 @@ app.get('/api/notes', requireAuth, asyncRoute(async (req, res) => {
         ${pageWhere}
         ORDER BY userPinned DESC, effectiveSortOrder DESC, id DESC
         LIMIT ?`,
-        [...queryParams, limit + 1]
+        [...queryParams.slice(0, 2), req.user.id, ...queryParams.slice(2), limit + 1]
       );
       trace.mark('search-query', { rows: rows.length, limit, tokens: searchTokens.length });
       page = rows.slice(0, limit);
@@ -4622,6 +4643,7 @@ app.get('/api/notes', requireAuth, asyncRoute(async (req, res) => {
     `SELECT notes.*,
             COALESCE(pos.sortOrder, notes.sortOrder) AS effectiveSortOrder,
             CASE WHEN user_pins.noteId IS NOT NULL THEN 1 ELSE 0 END AS userPinned,
+            COALESCE(view_state.completedChecklistCollapsed, 0) AS completedChecklistCollapsed,
             owner.displayName AS ownerDisplayName,
             owner.username AS ownerUsername,
             owner.avatarPreset AS ownerAvatarPreset,
@@ -4632,10 +4654,11 @@ app.get('/api/notes', requireAuth, asyncRoute(async (req, res) => {
      LEFT JOIN users lastEditor ON lastEditor.id = notes.lastEditorUserId
      LEFT JOIN user_pins ON user_pins.noteId = notes.id AND user_pins.userId = ?
      LEFT JOIN user_note_positions pos ON pos.noteId = notes.id AND pos.userId = ?
+     LEFT JOIN user_note_view_states view_state ON view_state.noteId = notes.id AND view_state.userId = ?
      LEFT JOIN note_collaborators access ON access.noteId = notes.id AND access.userId = ?
      WHERE notes.ownerUserId = ? OR access.userId IS NOT NULL
      ORDER BY effectiveSortOrder DESC, notes.id DESC`,
-    [req.user.id, req.user.id, req.user.id, req.user.id]
+    [req.user.id, req.user.id, req.user.id, req.user.id, req.user.id]
   );
 
   // Collect every userId we'll need to resolve (owners + collaborators)
@@ -4923,6 +4946,10 @@ app.put('/api/notes/:id/collaborators', requireAuth, asyncRoute(async (req, res)
   const noteId = Number(req.params.id);
   const note = await getOwnedNote(noteId, req.user.id);
   if (!note) return res.status(404).json({ error: 'Note not found.' });
+  if (!note.syncId) {
+    note.syncId = `note-${crypto.randomUUID()}`;
+    await run('UPDATE notes SET syncId = ? WHERE id = ?', [note.syncId, noteId]);
+  }
   const previousRecipients = await getNoteRecipientIds(noteId);
   const previousCollaborators = await all('SELECT userId FROM note_collaborators WHERE noteId = ?', [noteId]);
 
@@ -4953,7 +4980,26 @@ app.put('/api/notes/:id/collaborators', requireAuth, asyncRoute(async (req, res)
 
   const collaborators = await getCollaboratorsForNote(noteId);
   const nextRecipients = await getNoteRecipientIds(noteId);
-  await broadcastNoteChange(noteId, 'collaborators-updated', [...previousRecipients, ...nextRecipients]);
+  const removedUserIds = previousCollaborators
+    .map(row => Number(row.userId))
+    .filter(userId => userId && !nextSet.has(userId));
+  if (removedUserIds.length) {
+    const revokedStamp = serverLwwStamp();
+    await recordNoteSyncChange(noteId, 'delete', removedUserIds, {
+      syncId: note.syncId,
+      lwwPhysicalMs: revokedStamp.physicalMs,
+      lwwLogical: revokedStamp.logical,
+      lwwDeviceId: revokedStamp.deviceId,
+      lwwOperationId: revokedStamp.operationId
+    });
+    broadcastRealtime(removedUserIds, {
+      type: 'notes-changed',
+      action: 'access-revoked',
+      noteId,
+      syncId: note.syncId
+    });
+  }
+  await broadcastNoteChange(noteId, 'collaborators-updated', nextRecipients);
   res.json(collaborators);
 }));
 
@@ -5110,6 +5156,23 @@ app.put('/api/notes/:id', requireAuth, asyncRoute(async (req, res) => {
   await syncNoteImagesForNote(Number(req.params.id), note.ownerUserId, next);
   await broadcastNoteChange(Number(req.params.id), 'updated');
   await cleanupUnusedLabels(req.user.id);
+  res.status(204).end();
+}));
+
+app.patch('/api/notes/:id/view-state', requireAuth, asyncRoute(async (req, res) => {
+  const noteId = Number(req.params.id);
+  const note = await getAccessibleNote(noteId, req.user.id);
+  if (!note) return res.status(404).json({ error: 'Note not found.' });
+
+  await run(
+    `INSERT INTO user_note_view_states (userId, noteId, completedChecklistCollapsed, updatedAt)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(userId, noteId) DO UPDATE SET
+       completedChecklistCollapsed = excluded.completedChecklistCollapsed,
+       updatedAt = excluded.updatedAt`,
+    [req.user.id, noteId, req.body?.completedChecklistCollapsed ? 1 : 0, new Date().toISOString()]
+  );
+
   res.status(204).end();
 }));
 

@@ -173,20 +173,19 @@ export class SharedService {
     const labels: LabelI[] = [];
     const seen = new Set<string>();
 
-    for (const label of [...this.serverLabels].reverse()) {
+    for (const label of this.serverLabels) {
       this.addLabelIfMissing(labels, seen, label);
     }
 
     const derivedLabels = (this.note.all || [])
       .flatMap(note => note.labels || [])
-      .filter(label => label?.added !== false)
-      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
+      .filter(label => label?.added !== false);
 
     for (const label of derivedLabels) {
       this.addLabelIfMissing(labels, seen, label);
     }
 
-    this.label.list = labels;
+    this.label.list = labels.sort((a, b) => this.compareLabels(a, b));
   }
 
   private addLabelIfMissing(target: LabelI[], seen: Set<string>, label?: LabelI) {
@@ -196,6 +195,11 @@ export class SharedService {
     if (seen.has(key)) return;
     seen.add(key);
     target.push({ id: label?.id, name });
+  }
+
+  private compareLabels(a: LabelI, b: LabelI) {
+    const byName = String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' });
+    return byName || Number(a.id || 0) - Number(b.id || 0);
   }
 
   private binderStoragePartition() {

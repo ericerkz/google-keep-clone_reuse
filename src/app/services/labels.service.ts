@@ -89,6 +89,11 @@ export class LabelsService {
       seen.add(key);
       unique.push({ ...label, name });
     }
-    return unique;
+    return unique.sort((a, b) => this.compareLabels(a, b));
+  }
+
+  private compareLabels(a: LabelI, b: LabelI) {
+    const byName = String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' });
+    return byName || Number(a.id || 0) - Number(b.id || 0);
   }
 }

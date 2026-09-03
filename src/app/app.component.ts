@@ -4,6 +4,7 @@ import { NavigationEnd, Router } from '@angular/router';
 import { Subscription, filter } from 'rxjs';
 import { PushNotificationService } from './services/push-notification.service';
 import { SharedService } from './services/shared.service';
+import { ShareIntentsService } from './services/share-intents.service';
 
 type AppBackButtonEvent = { canGoBack?: boolean };
 type PluginListenerHandle = { remove: () => Promise<void> | void };
@@ -109,12 +110,14 @@ export class AppComponent implements OnInit, OnDestroy {
   constructor(
     private push: PushNotificationService,
     private shared: SharedService,
+    private shareIntents: ShareIntentsService,
     private ngZone: NgZone,
     private router: Router
   ) {}
 
   ngOnInit() {
     this.shared.initPwa();
+    this.shareIntents.init().catch(console.error);
     this.registerAndroidBackButton();
     this.notificationPromptResetListener = () => {
       this.ngZone.run(() => this.refreshNotificationPrompt(true));
@@ -140,6 +143,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    this.shareIntents.destroy().catch(console.error);
     this.androidBackButtonHandle?.remove();
     if (this.notificationPromptResetListener) {
       window.removeEventListener('kept-notification-permission-reprompt', this.notificationPromptResetListener);

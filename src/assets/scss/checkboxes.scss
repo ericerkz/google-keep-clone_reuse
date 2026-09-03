@@ -241,6 +241,7 @@
   color: #5f6368;
   transition: background-color 0.16s ease, color 0.16s ease, opacity 0.16s ease;
   @extend %ic;
+  background-color: currentColor !important;
 
   &.min {
     margin-right: 2px;
@@ -248,7 +249,7 @@
   }
 
   &:hover {
-    background-color: #3c4043;
+    background-color: currentColor !important;
     color: #3c4043;
     opacity: 1;
   }
@@ -258,16 +259,25 @@ body.light-theme .cbox-cancel-icon {
   color: #5f6368;
 
   &:hover {
-    background-color: #202124;
+    color: #202124;
+  }
+
+  &.H:hover {
+    background-color: currentColor !important;
     color: #202124;
   }
 }
 
-body.dark-theme .cbox-cancel-icon {
+body.dark-theme .cbox-cancel-icon,
+body:not(.light-theme) .cbox-cancel-icon {
   color: #bdc1c6;
 
   &:hover {
-    background-color: #ffffff;
+    color: #ffffff;
+  }
+
+  &.H:hover {
+    background-color: currentColor !important;
     color: #ffffff;
   }
 }

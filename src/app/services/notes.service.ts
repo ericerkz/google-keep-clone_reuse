@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { BehaviorSubject, firstValueFrom, Subscription } from 'rxjs';
 
@@ -27,6 +28,9 @@ interface NotesCardPage {
 interface NotesLoadOptions {
   cacheBust?: boolean;
 }
+type KeptDownloadsPlugin = {
+  saveFile: (options: { filename: string; mimeType: string; base64Data: string }) => Promise<void>;
+};
 import { environment } from 'src/environments/environment';
 import { NoteAttachmentI, NoteI, UpdateKeyI } from './../interfaces/notes';
 import { AuthService } from './auth.service';
@@ -35,6 +39,8 @@ import { ReminderService } from './reminder.service';
 import { OfflineStoreService } from './offline-store.service';
 import { OfflineSyncService } from './offline-sync.service';
 import { UserPreferencesService } from './user-preferences.service';
+
+const KeptDownloads = registerPlugin<KeptDownloadsPlugin>('KeptDownloads');
 
 @Injectable({
   providedIn: 'root'
@@ -225,6 +231,11 @@ export class NotesService {
       try {
         const message = JSON.parse(event.data);
         if (message.type === 'notes-changed') {
+          if (message.action === 'access-revoked') {
+            this.removeNoteFromListAndCache(Number(message.noteId), String(message.syncId || '')).catch(console.error);
+            this.reminders.load().catch(console.error);
+            return;
+          }
           if (message.action === 'reordered' && this.suppressNextReorderReloadUntil > Date.now()) {
             this.suppressNextReorderReloadUntil = 0;
             return;
@@ -616,14 +627,89 @@ export class NotesService {
       headers: this.auth.authHeaders(),
       responseType: 'blob'
     }));
+    const filename = attachment.originalName || 'attachment';
+    if (await this.tryNativeDownload(blob, filename, attachment.mimeType)) return;
+    this.browserDownloadBlob(blob, filename);
+  }
+
+  canUseNativeDownloads() {
+    return Capacitor.getPlatform() === 'android';
+  }
+
+  async downloadImage(src: string, filename?: string) {
+    const imageUrl = this.auth.authenticatedImageUrl(src);
+    const response = await fetch(imageUrl);
+    if (!response.ok) throw new Error('Could not download image.');
+    const blob = await response.blob();
+    const resolvedFilename = this.imageDownloadFilename(filename, src, blob.type);
+    if (await this.tryNativeDownload(blob, resolvedFilename, blob.type || 'image/png')) return;
+    this.browserDownloadBlob(blob, resolvedFilename);
+  }
+
+  private async tryNativeDownload(blob: Blob, filename: string, mimeType?: string) {
+    if (!this.canUseNativeDownloads()) return false;
+    try {
+      await KeptDownloads.saveFile({
+        filename,
+        mimeType: mimeType || blob.type || 'application/octet-stream',
+        base64Data: await this.blobToBase64(blob)
+      });
+      return true;
+    } catch (error) {
+      console.warn('Native download unavailable; falling back to browser download.', error);
+      return false;
+    }
+  }
+
+  private browserDownloadBlob(blob: Blob, filename: string) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = attachment.originalName || 'attachment';
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  private blobToBase64(blob: Blob) {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error || new Error('Could not read file.'));
+      reader.onload = () => {
+        const result = String(reader.result || '');
+        resolve(result.includes(',') ? result.split(',')[1] : result);
+      };
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  private imageDownloadFilename(filename: string | undefined, src: string, mimeType: string) {
+    const clean = String(filename || '').trim();
+    if (clean && /\.[a-z0-9]{2,8}$/i.test(clean)) return clean;
+    const fromUrl = this.filenameFromUrl(src);
+    if (fromUrl) return fromUrl;
+    const ext = this.extensionFromMimeType(mimeType);
+    return `${clean || 'kept-image'}.${ext}`;
+  }
+
+  private filenameFromUrl(src: string) {
+    try {
+      const url = new URL(src, window.location.origin);
+      const filename = decodeURIComponent(url.pathname.split('/').pop() || '').trim();
+      return filename && /\.[a-z0-9]{2,8}$/i.test(filename) ? filename : '';
+    } catch {
+      return '';
+    }
+  }
+
+  private extensionFromMimeType(mimeType: string) {
+    const type = String(mimeType || '').toLowerCase();
+    if (type.includes('jpeg') || type.includes('jpg')) return 'jpg';
+    if (type.includes('webp')) return 'webp';
+    if (type.includes('gif')) return 'gif';
+    if (type.includes('svg')) return 'svg';
+    return 'png';
   }
 
   async get(id: number, options: { merge?: boolean } = {}) {
@@ -709,6 +795,22 @@ export class NotesService {
     this.publishNotes(next);
   }
 
+  private async removeNoteFromListAndCache(noteId: number, syncId = '') {
+    const current = this.notesList$.value || [];
+    const note = current.find(item => item.id === noteId);
+    const noteSyncId = syncId || note?.syncId || '';
+    this.optimisticNotes.delete(noteId);
+    this.joinedNotes.delete(noteId);
+    if (noteSyncId && this.offlineSync.partition) {
+      await this.offlineStore.deleteNote(this.offlineSync.partition, noteSyncId);
+    }
+    const next = current.filter(item => item.id !== noteId);
+    if (next.length !== current.length) this.publishNotes(next);
+    if (this.lastNonEmptyNotes.length) {
+      this.lastNonEmptyNotes = this.lastNonEmptyNotes.filter(item => item.id !== noteId);
+    }
+  }
+
   private suppressRealtimeReload(noteId: number) {
     this.suppressedRealtimeReloads.set(noteId, Date.now() + 5000);
   }
@@ -763,6 +865,15 @@ export class NotesService {
       this.load().catch(console.error);
       return users;
     } else return []
+  }
+
+  async updateViewState(id: number, state: { completedChecklistCollapsed?: boolean }) {
+    if (id < 0 || !navigator.onLine) return
+    await firstValueFrom(this.http.patch(
+      `${this.apiUrl}/${id}/view-state`,
+      state,
+      { headers: this.auth.authHeaders() }
+    ));
   }
 
   private mergeCollaboratorsIntoList(id: number, collaborators: ShareUserI[]) {
@@ -976,7 +1087,7 @@ export class NotesService {
   }
 
   private async hydrateOfflineNoteMedia(note: NoteI) {
-    if (!this.offlineSync.partition || navigator.onLine) return note;
+    if (!this.offlineSync.partition) return note;
     const replacements = new Map<string, string>();
     for (const url of this.noteImageUrls(note)) {
       const canonical = this.auth.canonicalImageUrl(url);

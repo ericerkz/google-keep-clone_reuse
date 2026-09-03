@@ -182,12 +182,12 @@
         }
       </div>
 
-      <ng-container [ngTemplateOutlet]="imagesTemplate" [ngTemplateOutletContext]="{ placement: 'top' }">
-      </ng-container>
       <div [hidden]="noteTitle.innerHTML.length" class="note-title ph"> Title</div>
       <div #noteTitle (input)="onNoteTitleInput()" (paste)="pasteEvent($event)" (focus)="rememberTextHistoryTarget(noteTitle)"
         class="note-title" contenteditable="true" spellcheck="true" autocomplete="off" autocorrect="off" autocapitalize="sentences" inputmode="text">
       </div>
+      <ng-container [ngTemplateOutlet]="imagesTemplate" [ngTemplateOutletContext]="{ placement: 'top' }">
+      </ng-container>
       <!--? note OR checkboxes (or both, in the case of merged hybrid notes) -->
       @if (isCbox.value && hasHybridBody()) {
         <ng-container [ngTemplateOutlet]="noteTemplate"></ng-container>
@@ -682,7 +682,7 @@
               <span class="material-symbols-outlined">close</span>
             </button>
           }
-          <img [src]="image.dataUrl" [alt]="image.name">
+          <img [src]="image.dataUrl" [alt]="image.name" (contextmenu)="downloadImage(image.dataUrl, image.name, $event)">
         </figure>
       }
     }
@@ -734,7 +734,7 @@
 <ng-template #noteTemplate>
   <div [hidden]="noteBody.innerHTML.length" class="note-body ph">Take a note…</div>
   <div #noteBody (input)="onNoteBodyInput(noteBody)" (paste)="pasteEvent($event)" (focus)="rememberTextHistoryTarget(noteBody)"
-    (click)="onNoteBodyClick($event)"
+    (click)="onNoteBodyClick($event)" (contextmenu)="downloadInlineImage($event)"
     class="note-body" contenteditable="true" spellcheck="true" autocomplete="off" autocorrect="off" autocapitalize="sentences" inputmode="text">
   </div>
 </ng-template>
@@ -747,14 +747,14 @@
     <div class="cbox-plus-icon"></div>
     <div class="cbox-note-container">
       <div class="cbox-note ph">List item</div>
-      <div #cboxPh (keydown)="cboxPhKeyDown($event)" (focus)="rememberTextHistoryTarget(cboxPh)" class="cbox-note" contenteditable="true" spellcheck="true" autocomplete="off" autocorrect="off" autocapitalize="sentences" inputmode="text">
+      <div #cboxPh (keydown)="cboxPhKeyDown($event)" (input)="cboxPhInput()" (focus)="rememberTextHistoryTarget(cboxPh)" class="cbox-note" contenteditable="true" spellcheck="true" autocomplete="off" autocorrect="off" autocapitalize="sentences" inputmode="text">
       </div>
     </div>
   </div>
   <!--? isDone: true -->
   @if (preferences.value.moveCompletedChecklistItemsToBottom && completedChecklistCount()) {
     <div class="hr"></div>
-    <div class="cbox-done-container" (click)="isCboxCompletedListCollapsed = !isCboxCompletedListCollapsed">
+    <div class="cbox-done-container" (click)="toggleCompletedChecklistCollapse()">
       <div [class.rotate]="!isCboxCompletedListCollapsed" class="cbox-arrow"></div>
       <div>
         <span>({{completedChecklistCount()}}) Completed items</span>

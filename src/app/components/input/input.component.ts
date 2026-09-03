@@ -21,6 +21,7 @@ import { isNativePhonePlatform, shouldUseFullscreenNoteEditor } from 'src/app/ut
 import { NoteLockService } from 'src/app/services/note-lock.service';
 import { UserPreferencesService } from 'src/app/services/user-preferences.service';
 import { ensureTimepickerWheelPlugin } from 'src/app/utils/timepicker-wheel';
+import { environment } from 'src/environments/environment';
 
 declare var Snackbar: any;
 type InputLengthI = { title?: number, body?: number, cb?: number }
@@ -367,7 +368,7 @@ export class InputComponent implements OnInit {
     this.isCbox.next(true)
     this.cd.detectChanges()
     this.restoreBodyHtmlAfterTemplateSwap(currentBodyHtml)
-    this.cboxPh?.nativeElement.focus()
+    requestAnimationFrame(() => this.cboxPh?.nativeElement.focus())
   }
 
   hasHybridBody(): boolean {
@@ -651,6 +652,51 @@ export class InputComponent implements OnInit {
 
   completedChecklistCount() {
     return this.checkBoxes.filter(cb => cb.done).length
+  }
+
+  toggleCompletedChecklistCollapse() {
+    this.isCboxCompletedListCollapsed = !this.isCboxCompletedListCollapsed
+    this.saveCompletedChecklistCollapseState()
+    if (this.isEditing && this.noteToEdit.id) {
+      this.noteToEdit.completedChecklistCollapsed = this.isCboxCompletedListCollapsed
+      this.notesService.updateViewState(this.noteToEdit.id, {
+        completedChecklistCollapsed: this.isCboxCompletedListCollapsed
+      }).catch(console.error)
+    }
+  }
+
+  private completedChecklistCollapseStorageKey(note: NoteI = this.noteToEdit) {
+    const userId = this.auth.currentUser?.id || 'anon'
+    const server = environment.apiUrl || location.origin
+    const noteKey = note?.syncId || note?.id
+    return noteKey ? `kept_completed_checklist_collapsed:${server}:${userId}:${noteKey}` : ''
+  }
+
+  private loadCompletedChecklistCollapseState(note: NoteI) {
+    if (typeof note.completedChecklistCollapsed === 'boolean') {
+      this.isCboxCompletedListCollapsed = note.completedChecklistCollapsed
+      this.saveCompletedChecklistCollapseState()
+      return
+    }
+    const key = this.completedChecklistCollapseStorageKey(note)
+    if (!key) {
+      this.isCboxCompletedListCollapsed = false
+      return
+    }
+    try {
+      const saved = localStorage.getItem(key)
+      this.isCboxCompletedListCollapsed = saved === null ? false : saved === '1'
+    } catch {
+      this.isCboxCompletedListCollapsed = false
+    }
+  }
+
+  private saveCompletedChecklistCollapseState() {
+    const key = this.completedChecklistCollapseStorageKey()
+    if (!key) return
+    try {
+      localStorage.setItem(key, this.isCboxCompletedListCollapsed ? '1' : '0')
+    } catch {}
   }
 
   private cboxSectionMatches(cb: CheckboxI, isDone: boolean) {
@@ -1092,6 +1138,23 @@ export class InputComponent implements OnInit {
     }
   }
 
+  async downloadImage(src: string, filename: string | undefined, event: Event) {
+    if (!this.notesService.canUseNativeDownloads()) return
+    event.preventDefault()
+    event.stopPropagation()
+    try {
+      await this.notesService.downloadImage(src, filename)
+    } catch (error: any) {
+      this.showAttachmentMessage(error?.error?.error || 'Could not download image.')
+    }
+  }
+
+  async downloadInlineImage(event: Event) {
+    const target = event.target
+    if (!(target instanceof HTMLImageElement) || !this.notesService.canUseNativeDownloads()) return
+    await this.downloadImage(target.getAttribute('src') || target.src, target.getAttribute('alt') || 'kept-image', event)
+  }
+
   attachmentIcon(attachment: Pick<NoteAttachmentI, 'mimeType' | 'originalName'> | File) {
     const name = 'name' in attachment ? attachment.name : attachment.originalName
     const mime = 'type' in attachment ? attachment.type : attachment.mimeType
@@ -1279,25 +1342,36 @@ export class InputComponent implements OnInit {
   //? checkboxes  --------------------------------------------------
 
   cboxPhKeyDown($event: KeyboardEvent) {
-    $event.preventDefault()
     const isLetter = /^[a-zA-Z0-9!@#$%^&*()_+\-=\[\]{};':"²^\\|,.<>\/?éèçµ]$/i.test($event.key)
     // ex : if he clicked the f1 btn for example, nothing would happen, otherwise : 
     if (!isLetter) return
+    $event.preventDefault()
     let enteredValue = $event.key
     this.addCheckBox(enteredValue) // a new checkbox will appear in the html
     this.cd.detectChanges()
-    let el = document.querySelector(`[data-cbox-last="true"]`)
-    // we move the cursor to the end, so the user will just continue what he typed before
-    let sel = window.getSelection()
-    if (el) sel?.selectAllChildren(el)
-    sel?.collapseToEnd()
+    this.focusLastCboxInput()
+  }
+
+  cboxPhInput() {
+    const value = this.cboxPh?.nativeElement.innerHTML || ''
+    if (!value.trim()) return
+    this.cboxPh?.nativeElement.replaceChildren()
+    this.addCheckBox(value)
+    this.cd.detectChanges()
+    this.focusLastCboxInput()
   }
 
   cboxPhClick() {
-    this.addCheckBox('')
-    this.cd.detectChanges()
-    const el = document.querySelector(`[data-cbox-last="true"]`) as HTMLDivElement
-    if (el) el.focus()
+    requestAnimationFrame(() => this.cboxPh?.nativeElement.focus())
+  }
+
+  private focusLastCboxInput() {
+    const el = document.querySelector(`[data-cbox-last="true"]`) as HTMLDivElement | null
+    if (!el) return
+    el.focus()
+    const sel = window.getSelection()
+    sel?.selectAllChildren(el)
+    sel?.collapseToEnd()
   }
 
   addCheckBox(data: string, insertAfterId?: number) {
@@ -2724,6 +2798,7 @@ export class InputComponent implements OnInit {
     this.noteMain.nativeElement.style.borderColor = note.bgColor
     this.updateTextColor(note.bgColor)
     this.checkBoxes = this.normalizeCheckBoxes(note.checkBoxes || [])
+    this.loadCompletedChecklistCollapseState(note)
     this.resetCboxHistory()
     // Hybrid: latch BEFORE flipping isCbox so the noteBody ViewChild is
     // present after change detection (otherwise the body assignment below
