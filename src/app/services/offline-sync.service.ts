@@ -208,6 +208,7 @@ export class OfflineSyncService {
     if (!this.currentPartition) return;
     let state = await this.store.getSyncState(this.currentPartition);
     let hasMore = true;
+    let changed = false;
     while (hasMore) {
       const response = await firstValueFrom(this.http.get<{
         changes: SyncChange[];
@@ -218,12 +219,14 @@ export class OfflineSyncService {
         headers: this.auth.authHeaders(),
         params: { cursor: String(state.cursor), limit: '500' }
       }));
-      for (const change of response.changes || []) await this.applyChange(change);
+      const changes = response.changes || [];
+      for (const change of changes) await this.applyChange(change);
+      changed = changed || changes.length > 0;
       await this.store.setSyncState(this.currentPartition, response.cursor || state.cursor, response.serverTime);
       state = await this.store.getSyncState(this.currentPartition);
       hasMore = !!response.hasMore;
     }
-    this.cacheChanged$.next();
+    if (changed) this.cacheChanged$.next();
   }
 
   private async applyChange(change: SyncChange) {
