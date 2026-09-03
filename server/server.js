@@ -2643,6 +2643,7 @@ async function broadcastNoteChange(noteId, action, userIds, options = {}) {
     options.deletedSnapshot
   );
   const payload = { type: 'notes-changed', action, noteId };
+  if (options.syncId) payload.syncId = options.syncId;
   broadcastRealtime(recipients, payload);
   if (action === 'created' || action === 'deleted' || action === 'collaborators-updated') {
     setTimeout(() => {
@@ -4147,7 +4148,7 @@ async function applySyncNoteMutation(userId, mutation) {
     if (noteData.pinned) await run('INSERT OR IGNORE INTO user_pins (userId, noteId) VALUES (?, ?)', [userId, result.id]);
     await syncNoteImagesForNote(result.id, userId, noteData);
     await recordNoteSyncChange(result.id, 'upsert', [userId]);
-    broadcastRealtime([userId], { type: 'notes-changed', action: 'created', noteId: result.id });
+    broadcastRealtime([userId], { type: 'notes-changed', action: 'created', noteId: result.id, syncId });
     return { ok: true, resourceType: 'note', syncId, id: result.id };
   }
 
@@ -5113,7 +5114,7 @@ app.post('/api/notes', requireAuth, asyncRoute(async (req, res) => {
   if (noteData.pinned) {
     await run('INSERT OR IGNORE INTO user_pins (userId, noteId) VALUES (?, ?)', [req.user.id, result.id]);
   }
-  await broadcastNoteChange(result.id, 'created', [req.user.id]);
+  await broadcastNoteChange(result.id, 'created', [req.user.id], { syncId });
   const created = await getAccessibleNote(result.id, req.user.id);
   res.status(201).json(dbNoteToApi(created));
 }));

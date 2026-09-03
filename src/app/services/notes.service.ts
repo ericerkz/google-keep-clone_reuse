@@ -68,6 +68,7 @@ export class NotesService {
   private previewPreloadQueue: string[] = [];
   private previewPreloadRunning = false;
   private suppressedRealtimeReloads = new Map<number, number>();
+  private suppressedRealtimeCreates = new Map<string, number>();
   private suppressNextReorderReloadUntil = 0;
   private optimisticNotes = new Map<number, NoteI>();
   private lastNonEmptyNotes: NoteI[] = [];
@@ -240,6 +241,7 @@ export class NotesService {
             this.suppressNextReorderReloadUntil = 0;
             return;
           }
+          if (this.shouldSuppressRealtimeCreate(message)) return;
           if (this.consumeSuppressedRealtimeReload(message.noteId)) return;
           this.load();
           this.reminders.load().catch(console.error);
@@ -259,6 +261,18 @@ export class NotesService {
       if (!this.shouldReconnectRealtime || !this.auth.token) return;
       this.realtimeReconnect = setTimeout(() => this.connectRealtime(this.auth.token), 2000);
     };
+  }
+
+  private shouldSuppressRealtimeCreate(message: any) {
+    if (message?.action !== 'created' || !message.syncId) return false;
+    const syncId = String(message.syncId);
+    const expiresAt = this.suppressedRealtimeCreates.get(syncId);
+    if (!expiresAt) return false;
+    if (expiresAt <= Date.now()) {
+      this.suppressedRealtimeCreates.delete(syncId);
+      return false;
+    }
+    return true;
   }
 
   // Track which notes we've asked the server to count us as "present" in.
@@ -413,21 +427,27 @@ export class NotesService {
       sortOrder: noteObj.sortOrder ?? Date.now()
     };
     this.offlineStore.ensureNoteIdentity(pendingNote);
+    if (pendingNote.syncId) this.suppressedRealtimeCreates.set(pendingNote.syncId, Date.now() + 5000);
     try {
       const result = await firstValueFrom(this.http.post<NoteI & { id: number }>(
         this.apiUrl,
         pendingNote,
         { headers: this.auth.authHeaders() }
       ));
-      const saved = result.sortOrder != null
-        ? { ...pendingNote, ...result }
-        : await this.get(result.id, { merge: false });
-      if (this.offlineSync.partition) await this.offlineStore.putNote(this.offlineSync.partition, saved);
-      await this.cacheNoteMedia(saved);
-      await this.ensureNotesVisible([result.id]);
-      this.load(this.searchQuery, { cacheBust: true }).catch(console.error);
+      try {
+        const saved = result.sortOrder != null
+          ? { ...pendingNote, ...result }
+          : await this.get(result.id, { merge: false });
+        if (this.offlineSync.partition) await this.offlineStore.putNote(this.offlineSync.partition, saved);
+        await this.cacheNoteMedia(saved);
+        this.prependNotesIntoList([saved]);
+      } catch (hydrateError) {
+        console.warn('Created note, but failed to hydrate it locally; reloading notes.', hydrateError);
+        this.load(this.searchQuery, { cacheBust: true }).catch(console.error);
+      }
       return result.id;
     } catch (error) {
+      if (pendingNote.syncId) this.suppressedRealtimeCreates.delete(pendingNote.syncId);
       if (this.auth.notifySessionExpired(error)) {
         console.warn('Note was not saved because the session expired.');
         throw error;
