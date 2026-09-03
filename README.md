@@ -46,6 +46,8 @@ I wanted something that felt like Google Keep: fast, colorful, easy to glance at
 - Link previews and inline images.
 - Time reminders with browser push notifications.
 - Location-based reminders through the native iOS and Android apps.
+- Quick share to Kept from the native iOS and Android share sheets.
+- Android home screen widget for recent or pinned notes.
 - Real-time collaborative sharing of notes between users on the same instance.
 - Offline note viewing/editing with automatic sync when the client reconnects.
 - Google Keep Takeout data import.
@@ -94,6 +96,7 @@ This is provided as a less technical way to try Kept, not as an endorsement of R
 
 - Apple Reminders support.
 - Location reminders with arrival/departure settings, and the ability to save locations
+- Quick share into Kept from the iOS share sheet.
 - On-device Smart Capture using Apple Intelligence.
 - A native app shell around your Kept instance.
 
@@ -102,6 +105,8 @@ This is provided as a less technical way to try Kept, not as an endorsement of R
 [Kept Notes is available on Google Play](https://play.google.com/store/apps/details?id=xyz.keepitkept.app). It connects to your self-hosted Kept server and adds native Android integration:
 
 - Location reminders with arrival/departure settings, background geofencing, and saved places.
+- Quick share into Kept from the Android share sheet.
+- Home screen widget for recent or pinned notes.
 - On-device Smart Capture using Android's native Gemini Nano when available, or Kept's local Gemma fallback model on Android devices that need it.
 - A native app shell around your Kept instance.
 
